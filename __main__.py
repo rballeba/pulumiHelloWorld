@@ -1,16 +1,28 @@
 """An AWS Python Pulumi program"""
 
 import pulumi
-from pulumi_aws import s3
+import pulumi_aws as aws
 
-# Create an AWS resource (S3 Bucket)
-bucket = s3.Bucket('pulumi-bucket', website=s3.BucketWebsiteArgs(index_document="index.html"))
+instance_assume_role_policy = aws.iam.get_policy_document(statements=[aws.iam.GetPolicyDocumentStatementArgs(
+    actions=["sts:AssumeRole"],
+    principals=[aws.iam.GetPolicyDocumentStatementPrincipalArgs(
+        type="Service",
+        identifiers=["lambda.amazonaws.com"],
+    ),
+      aws.iam.GetPolicyDocumentStatementPrincipalArgs(
+        type="Service",
+        identifiers=["logs.eu-central-1.amazonaws.com"],
+    )],
+)])
 
-# Export the name of the bucket
-pulumi.export('bucket_name', bucket.id)
+lambda_role = aws.iam.Role("lambda_role",
+    path="/system/",
+    assume_role_policy=instance_assume_role_policy.json)
 
-# Creating site index.html
-bucketObject = s3.BucketObject('index.html', acl='public-read', content_type='text/html', bucket=bucket, content=open('staticsite/index.html').read())
-
-# Export the endpoint
-pulumi.export('bucket_endpoint', pulumi.Output.concat('http://', bucket.website_endpoint))
+lambda_function = aws.lambda_.Function(
+  "example_lambda_function",
+  code=pulumi.FileArchive('./handler'),
+  role=lambda_role.arn,
+  runtime='nodejs12.x',
+  handler = 'index.handler'
+)
